@@ -14,6 +14,7 @@ import {
   CreditCard, Banknote, Zap, RotateCcw, AlertCircle, Calendar, Menu, X,
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
+import { apiFetch as fetch, setApiToken } from "../lib/api";
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
 const DISPLAY = { fontFamily: "'DM Serif Display', Georgia, serif" };
@@ -553,8 +554,8 @@ function AuthScreen({
   totalDesigns: number;
   currentMonthRevenue: number;
 }) {
-  const [email, setEmail] = useState("ana@lambstore.com.br");
-  const [pass, setPass] = useState("admin123");
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<"login" | "forgot">("login");
 
@@ -572,24 +573,14 @@ function AuthScreen({
       });
       if (response.ok) {
         const body = await response.json();
+        setApiToken(body.token);
         onLogin(body.user);
         return;
       }
       const errBody = await response.json().catch(() => null);
       throw new Error(errBody?.error || "E-mail ou senha inválidos");
     } catch (error) {
-      // Offline / local fallback check
-      if (email.toLowerCase() === "ana@lambstore.com.br" && pass === "admin123") {
-        onLogin({
-          id: 1,
-          nome: "Ana Costa",
-          email: "ana@lambstore.com.br",
-          cargo: "Admin",
-          status: "Ativo",
-        });
-      } else {
-        toast.error(error instanceof Error ? error.message : "Não foi possível entrar");
-      }
+      toast.error(error instanceof Error ? error.message : "Não foi possível entrar");
     } finally {
       setLoading(false);
     }
@@ -649,8 +640,7 @@ function AuthScreen({
               <div className="space-y-4">
                 <Field label="E-mail" type="email" value={email} onChange={setEmail} icon={<Mail size={13} />} placeholder="seu@email.com" />
                 <Field label="Senha" type="password" value={pass} onChange={setPass} icon={<Lock size={13} />} placeholder="••••••••" />
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-[#8fafc5]/60">Padrão: ana@lambstore.com.br / admin123</span>
+                <div className="flex justify-end items-center text-xs">
                   <button onClick={() => setMode("forgot")} className="text-[#679bbc] hover:text-[#e8f0f7] transition-colors cursor-pointer">
                     Esqueci minha senha
                   </button>
@@ -4196,6 +4186,8 @@ export default function App() {
 
   // Fetch initial data from backend API
   useEffect(() => {
+    if (!currentUser) return;
+
     fetch("/api/products")
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => { if (Array.isArray(data)) setProducts(data); })
@@ -4219,7 +4211,7 @@ export default function App() {
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => { if (Array.isArray(data)) setEntries(data); })
       .catch(() => {});
-  }, []);
+  }, [currentUser]);
 
   // Kanban derived from orders
   const kanban = useMemo<KCols>(() => {
@@ -4547,7 +4539,10 @@ export default function App() {
       <Sidebar
         active={screen}
         onNav={setScreen}
-        onLogout={() => setCurrentUser(null)}
+        onLogout={() => {
+          setApiToken(null);
+          setCurrentUser(null);
+        }}
         currentUser={currentUser}
         mobileOpen={mobileMenuOpen}
         onCloseMobile={() => setMobileMenuOpen(false)}

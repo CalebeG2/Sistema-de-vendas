@@ -8,24 +8,60 @@ const path = require('path');
 const { execFile } = require('child_process');
 const { Resend } = require('resend');
 const { setup } = require('./db/setup');
+const { getDatabaseConfig, hasDatabaseConfiguration } = require('./db/config');
 
 dotenv.config();
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
 
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: Number(process.env.DB_PORT || 5432),
-  database: process.env.DB_NAME || 'lamb_store',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
-  ssl: process.env.DB_HOST?.includes('neon') ? { rejectUnauthorized: false } : false,
-});
+const isProduction = process.env.NODE_ENV === 'production';
+const pool = new Pool(getDatabaseConfig());
+const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+const authTokenSecret = process.env.AUTH_TOKEN_SECRET || 'local-development-only-secret';
 
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+function createAuthToken(user) {
+  const payload = Buffer.from(
+    JSON.stringify({ userId: user.id, expiresAt: Date.now() + 12 * 60 * 60 * 1000 })
+  ).toString('base64url');
+  const signature = crypto.createHmac('sha256', authTokenSecret).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function isValidAuthToken(token) {
+  const [payload, signature, extra] = String(token || '').split('.');
+  if (!payload || !signature || extra) return false;
+
+  const expected = crypto.createHmac('sha256', authTokenSecret).update(payload).digest();
+  const actual = Buffer.from(signature, 'base64url');
+  if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) return false;
+
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    return Number.isInteger(decoded.userId) && decoded.expiresAt > Date.now();
+  } catch {
+    return false;
+  }
+}
+
+app.use('/api', (req, res, next) => {
+  if (!isProduction || req.path === '/auth/login' || req.path === '/health') return next();
+
+  const authorization = req.get('authorization') || '';
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  if (!isValidAuthToken(token)) {
+    return res.status(401).json({ error: 'Autenticação necessária' });
+  }
+
+  next();
+});
 
 const backupsDir = path.join(__dirname, '..', 'backups');
 const localStorePath = path.join(__dirname, 'db', 'local-data.json');
@@ -146,12 +182,44 @@ function saveLocalStore(store) {
 }
 
 async function initDatabase() {
+  if (isProduction) {
+    if (!hasDatabaseConfiguration()) {
+      throw new Error('Configure DATABASE_URL or all DB_* connection variables before starting in production.');
+    }
+    if (!process.env.INITIAL_ADMIN_EMAIL || !process.env.INITIAL_ADMIN_PASSWORD) {
+      throw new Error('Configure INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD before starting in production.');
+    }
+    if (process.env.INITIAL_ADMIN_PASSWORD.length < 12) {
+      throw new Error('INITIAL_ADMIN_PASSWORD must contain at least 12 characters.');
+    }
+    if (!process.env.CORS_ORIGINS || !allowedOrigins.length) {
+      throw new Error('Configure CORS_ORIGINS with the deployed frontend origin.');
+    }
+    const hasInvalidOrigin = allowedOrigins.some((origin) => {
+      if (origin === '*') return true;
+      try {
+        const parsedOrigin = new URL(origin);
+        return parsedOrigin.protocol !== 'https:' || parsedOrigin.origin !== origin;
+      } catch {
+        return true;
+      }
+    });
+    if (hasInvalidOrigin) {
+      throw new Error('CORS_ORIGINS must contain only HTTPS origins without paths or wildcards.');
+    }
+    if (!process.env.AUTH_TOKEN_SECRET || process.env.AUTH_TOKEN_SECRET.length < 32) {
+      throw new Error('Configure AUTH_TOKEN_SECRET with at least 32 characters.');
+    }
+  }
+
   try {
     await setup();
     await pool.query('SELECT 1');
     usePostgres = true;
-    console.log('✅ Connected to PostgreSQL database (clean state without mock data).');
+    console.log('✅ Connected to PostgreSQL database.');
   } catch (error) {
+    if (isProduction) throw error;
+
     usePostgres = false;
     loadLocalStore();
     console.warn(
@@ -453,7 +521,7 @@ app.post('/api/auth/login', async (req, res) => {
       if (!user || user.status !== 'Ativo' || hashPassword(password || '') !== user.password_hash) {
         return res.status(401).json({ error: 'E-mail ou senha inválidos' });
       }
-      return res.json({ user: publicUser(user) });
+      return res.json({ user: publicUser(user), token: createAuthToken(user) });
     }
     const store = loadLocalStore();
     const user = store.users.find((u) => u.email.toLowerCase() === String(email || '').toLowerCase());
@@ -462,7 +530,7 @@ app.post('/api/auth/login', async (req, res) => {
     }
     user.ultimo = new Date().toLocaleString('pt-BR');
     saveLocalStore(store);
-    res.json({ user: publicUser(user) });
+    res.json({ user: publicUser(user), token: createAuthToken(user) });
   } catch (error) {
     console.error('Error logging in:', error);
     res.status(500).json({ error: 'Falha ao autenticar' });
@@ -1371,8 +1439,12 @@ app.get('/api/health', async (req, res) => {
       await pool.query('SELECT NOW()');
       return res.json({ status: 'OK', database: 'postgresql' });
     } catch (error) {
-      return res.json({ status: 'OK', database: 'local-json-fallback' });
+      console.error('Database health check failed:', error.message);
+      return res.status(503).json({ status: 'error', database: 'unavailable' });
     }
+  }
+  if (isProduction) {
+    return res.status(503).json({ status: 'error', database: 'unavailable' });
   }
   res.json({ status: 'OK', database: 'local-json-fallback' });
 });
@@ -1381,4 +1453,7 @@ initDatabase().then(() => {
   app.listen(port, '0.0.0.0', () => {
     console.log(`🚀 Backend rodando em http://localhost:${port}`);
   });
+}).catch((error) => {
+  console.error('Failed to initialize backend:', error.message);
+  process.exit(1);
 });

@@ -1,20 +1,15 @@
 const { Pool, Client } = require('pg');
 const dotenv = require('dotenv');
 const crypto = require('crypto');
+const { getDatabaseConfig } = require('./config');
 
 dotenv.config();
 
 const dbName = process.env.DB_NAME || 'lamb_store';
-const baseConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  port: Number(process.env.DB_PORT || 5432),
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
-  ssl: process.env.DB_HOST?.includes('neon') ? { rejectUnauthorized: false } : false,
-};
+const baseConfig = getDatabaseConfig();
 
 async function ensureDatabaseExists() {
-  if (process.env.DB_HOST?.includes('neon')) return;
+  if (process.env.DATABASE_URL || process.env.NODE_ENV === 'production') return;
   const client = new Client({ ...baseConfig, database: 'postgres' });
   try {
     await client.connect();
@@ -33,10 +28,7 @@ async function ensureDatabaseExists() {
 async function setup() {
   await ensureDatabaseExists();
 
-  const pool = new Pool({
-    ...baseConfig,
-    database: dbName,
-  });
+  const pool = new Pool(process.env.DATABASE_URL ? baseConfig : { ...baseConfig, database: dbName });
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS products (
@@ -156,31 +148,34 @@ async function setup() {
 
   const userCount = await pool.query('SELECT COUNT(*)::int AS count FROM users');
   if (userCount.rows[0].count === 0) {
-    const passwordHash = crypto.scryptSync('admin123', 'lamb-store-salt', 64).toString('hex');
+    const adminEmail = process.env.INITIAL_ADMIN_EMAIL || 'ana@lambstore.com.br';
+    const adminPassword = process.env.INITIAL_ADMIN_PASSWORD || 'admin123';
+    const passwordHash = crypto.scryptSync(adminPassword, 'lamb-store-salt', 64).toString('hex');
     await pool.query(
       `INSERT INTO users (nome, email, cargo, password_hash) VALUES ($1, $2, $3, $4)`,
-      ['Ana Costa', 'ana@lambstore.com.br', 'Admin', passwordHash]
+      ['Ana Costa', adminEmail, 'Admin', passwordHash]
     );
   }
 
-  // Remove legacy mock products and mock DTF designs if they were seeded previously
-  await pool.query(`
-    DELETE FROM products
-    WHERE sku IN (
-      'CAM-BAS-BRA-P', 'CAM-BAS-BRA-M', 'CAM-PRE-PRE-M', 'CAM-OVR-CIN-G',
-      'REG-ESS-VIN-PM', 'CAM-POL-AZU-M', 'CAM-BAS-PRE-G', 'CAM-PRE-BRA-P'
-    )
-  `);
+  if (process.env.NODE_ENV !== 'production') {
+    await pool.query(`
+      DELETE FROM products
+      WHERE sku IN (
+        'CAM-BAS-BRA-P', 'CAM-BAS-BRA-M', 'CAM-PRE-PRE-M', 'CAM-OVR-CIN-G',
+        'REG-ESS-VIN-PM', 'CAM-POL-AZU-M', 'CAM-BAS-PRE-G', 'CAM-PRE-BRA-P'
+      )
+    `);
 
-  await pool.query(`
-    DELETE FROM dtf_designs
-    WHERE nome IN (
-      'Logo Minimal v3', 'Floral Delicado', 'Street Art 04', 'Bordado Classic',
-      'Tropical v2', 'Minimal Lines', 'Geometric 08', 'Urban Pattern', 'Vintage Logo'
-    )
-  `);
+    await pool.query(`
+      DELETE FROM dtf_designs
+      WHERE nome IN (
+        'Logo Minimal v3', 'Floral Delicado', 'Street Art 04', 'Bordado Classic',
+        'Tropical v2', 'Minimal Lines', 'Geometric 08', 'Urban Pattern', 'Vintage Logo'
+      )
+    `);
+  }
 
-  console.log('Database schema initialized successfully (clean state without mock data).');
+  console.log('Database schema initialized successfully.');
   await pool.end();
 }
 
