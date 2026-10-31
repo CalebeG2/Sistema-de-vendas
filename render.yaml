@@ -2,9 +2,9 @@ services:
   - type: web
     name: lamb-store-backend
     runtime: node
-    rootDir: Lamb Store System Design (1)/back
-    buildCommand: npm ci
-    startCommand: npm start
+    rootDir: .
+    buildCommand: cd "Lamb Store System Design (1)/back" && npm ci
+    startCommand: cd "Lamb Store System Design (1)/back" && npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV

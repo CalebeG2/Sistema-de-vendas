@@ -10,9 +10,9 @@ Crie um Blueprint no Render apontando para este repositório e selecione o
 `render.yaml` na raiz. Alternativamente, crie um Web Service
 com:
 
-- Root Directory: `Lamb Store System Design (1)/back`
-- Build Command: `npm ci`
-- Start Command: `npm start`
+- Root Directory: `.`
+- Build Command: `cd "Lamb Store System Design (1)/back" && npm ci`
+- Start Command: `cd "Lamb Store System Design (1)/back" && npm start`
 - Health Check Path: `/api/health`
 
 Configure estas variáveis no Render, sem colocá-las no Git:
