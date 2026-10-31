@@ -2,6 +2,7 @@ services:
   - type: web
     name: lamb-store-backend
     runtime: node
+    plan: free
     rootDir: .
     buildCommand: cd "Lamb Store System Design (1)/back" && npm ci
     startCommand: cd "Lamb Store System Design (1)/back" && npm start

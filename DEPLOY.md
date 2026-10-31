@@ -10,6 +10,8 @@ Crie um Blueprint no Render apontando para este repositório e selecione o
 `render.yaml` na raiz. Alternativamente, crie um Web Service
 com:
 
+- Instance Type: `Free` (o serviço pode dormir após 15 minutos sem tráfego e
+  levar cerca de um minuto para voltar a responder).
 - Root Directory: `.`
 - Build Command: `cd "Lamb Store System Design (1)/back" && npm ci`
 - Start Command: `cd "Lamb Store System Design (1)/back" && npm start`
