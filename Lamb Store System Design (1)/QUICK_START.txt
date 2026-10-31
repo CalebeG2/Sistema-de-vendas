@@ -1,0 +1,69 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                   🐑 LAMB STORE - SISTEMA APRIMORADO                       ║
+║                   Full-Stack pronto para rodar (Back + Front)              ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+✅ APRIMORAMENTOS IMPLEMENTADOS:
+  • Remoção completa de todos os dados mockados (Produtos, Dashboard, DTF, Pedidos e Relatórios)
+  • Inserção, edição e exclusão manual de valores no Dashboard ("+ Lançar Valores" e "Lançamentos")
+  • CRUD completo de Produtos (Criar, Visualizar, Editar, Excluir, Filtrar e Ajustar Estoque)
+  • CRUD completo de Designs DTF (Criar com imagem, Editar dados/estoque, Excluir e Filtrar)
+  • Botões "Exportar" e "Atualizar" removidos do cabeçalho do Dashboard
+  • Data da "Visão geral do sistema" sincronizada dinamicamente com a data do dia atual
+  • Gráfico de Receita Anual com filtros de Ano e Mês baseados na data atual (visão anual de Jan–Dez ou diária do mês selecionado)
+  • Seção "Estoque Crítico" posicionada de forma responsiva embaixo do gráfico de Receita Anual e com paginação completa
+  • Persistência híbrida automática: conecta ao PostgreSQL (criando banco/tabelas automaticamente) e possui fallback local automático caso o PostgreSQL não esteja ativo
+
+═══════════════════════════════════════════════════════════════════════════════
+
+🚀 COMO RODAR LOCALMENTE EM 2 TERMINAIS:
+
+1️⃣ TERMINAL 1 - BACKEND:
+   ──────────────────────────────
+   cd back
+   npm install
+   npm run dev
+
+   ✓ O servidor inicia em: http://localhost:4000
+   ✓ Se o PostgreSQL estiver ativo, o banco `lamb_store` e todas as tabelas são criados automaticamente (ou rode `npm run db:setup`).
+   ✓ Se o PostgreSQL não estiver rodando, o backend utiliza automaticamente persistência local em JSON sem erros!
+
+2️⃣ TERMINAL 2 - FRONTEND:
+   ─────────────────────────────
+   cd front
+   npm install
+   npm run dev
+
+   ✓ O frontend abre em: http://localhost:5173
+   ✓ Login padrão: ana@lambstore.com.br | Senha: admin123
+
+═══════════════════════════════════════════════════════════════════════════════
+
+📡 PRINCIPAIS ENDPOINTS DA API:
+
+   Produtos:
+   ├─ GET    /api/products               (listar todos)
+   ├─ POST   /api/products               (criar novo)
+   ├─ PUT    /api/products/:id           (atualizar produto)
+   ├─ PATCH  /api/products/:id/stock     (ajustar estoque)
+   ├─ GET    /api/products/:id/movements (histórico de movimentações)
+   └─ DELETE /api/products/:id           (excluir produto)
+
+   Lançamentos do Dashboard:
+   ├─ GET    /api/dashboard/entries      (listar lançamentos manuais)
+   ├─ POST   /api/dashboard/entries      (inserir valor/lançamento)
+   ├─ PUT    /api/dashboard/entries/:id  (editar lançamento)
+   └─ DELETE /api/dashboard/entries/:id  (excluir lançamento)
+
+   Designs DTF:
+   ├─ GET    /api/designs                (listar todos)
+   ├─ POST   /api/designs                (criar novo)
+   ├─ PUT    /api/designs/:id            (atualizar design)
+   ├─ PATCH  /api/designs/:id/stock      (atualizar estoque do DTF)
+   └─ DELETE /api/designs/:id            (excluir design)
+
+   Pedidos / Kanban:
+   ├─ GET    /api/orders                 (listar todos)
+   ├─ POST   /api/orders                 (criar pedido)
+   ├─ PATCH  /api/orders/:id/status      (mover coluna no Kanban)
+   └─ DELETE /api/orders/:id             (excluir pedido)

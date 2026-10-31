@@ -1,0 +1,4 @@
+**/.env
+**/node_modules/
+**/.vite/
+**/src/db/local-data.json
