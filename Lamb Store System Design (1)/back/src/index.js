@@ -109,6 +109,7 @@ function loadLocalStore() {
         products: parsed.products || [],
         dtf_designs: parsed.dtf_designs || [],
         orders: parsed.orders || [],
+        quotes: parsed.quotes || [],
         dashboard_entries: parsed.dashboard_entries || [],
         stock_movements: parsed.stock_movements || [],
         users: parsed.users?.length
@@ -128,13 +129,15 @@ function loadLocalStore() {
           backup_enabled: true,
           report_enabled: false,
         },
-        nextIds: parsed.nextIds || {
+        nextIds: {
           products: 1,
           dtf_designs: 1,
           orders: 1,
           dashboard_entries: 1,
           stock_movements: 1,
           users: 2,
+          quotes: (parsed.quotes || []).reduce((max, quote) => Math.max(max, Number(quote.id) || 0), 0) + 1,
+          ...(parsed.nextIds || {}),
         },
       };
     }
@@ -145,6 +148,7 @@ function loadLocalStore() {
     products: [],
     dtf_designs: [],
     orders: [],
+    quotes: [],
     dashboard_entries: [],
     stock_movements: [],
     users: [
@@ -163,6 +167,7 @@ function loadLocalStore() {
       products: 1,
       dtf_designs: 1,
       orders: 1,
+      quotes: 1,
       dashboard_entries: 1,
       stock_movements: 1,
       users: 2,
@@ -923,6 +928,217 @@ app.get('/api/designs/:id/image', async (req, res) => {
 });
 
 // ─── ORDERS / KANBAN ──────────────────────────────────────────────────────────
+function normalizeQuote(body) {
+  const cleanText = (value, maxLength) => String(value ?? '').trim().slice(0, maxLength);
+  const empresa = body.empresa;
+  const cliente = cleanText(body.cliente, 255);
+  const itens = body.itens;
+  const parcelas = body.parcelas;
+
+  if (!['peng', 'lamb'].includes(empresa)) {
+    return { error: 'Selecione uma empresa válida' };
+  }
+  if (!cliente) return { error: 'Informe o nome do cliente' };
+  if (!Array.isArray(itens) || itens.length === 0 || itens.length > 100) {
+    return { error: 'Adicione ao menos um item ao orçamento' };
+  }
+  if (!Array.isArray(parcelas) || parcelas.length > 60) {
+    return { error: 'Informe uma lista válida de parcelas' };
+  }
+
+  const cleanItems = [];
+  let valorTotalCentavos = 0;
+  for (const item of itens) {
+    if (!item || typeof item !== 'object') return { error: 'Revise os itens do orçamento' };
+    const quantidade = Number(item.quantidade);
+    const valorUnitario = Number(item.valor_unitario);
+    if (
+      !Number.isSafeInteger(quantidade) || quantidade < 1 || quantidade > 100000 ||
+      !Number.isFinite(valorUnitario) || valorUnitario < 0 || valorUnitario > 100000000
+    ) {
+      return { error: 'Revise as quantidades e os valores dos itens' };
+    }
+    const valorTotalItem = Math.round(quantidade * valorUnitario * 100) / 100;
+    valorTotalCentavos += Math.round(valorTotalItem * 100);
+    cleanItems.push({
+      quantidade,
+      descricao: cleanText(item.descricao, 255),
+      codigo: cleanText(item.codigo, 100),
+      valor_unitario: Math.round(valorUnitario * 100) / 100,
+      valor_total: valorTotalItem,
+    });
+  }
+  if (valorTotalCentavos > 999999999999) return { error: 'O total do orçamento excede o limite permitido' };
+
+  const cleanInstallments = [];
+  for (const installment of parcelas) {
+    if (!installment || typeof installment !== 'object') {
+      return { error: 'Revise as parcelas do orçamento' };
+    }
+    const valor = Number(installment.valor);
+    if (!Number.isFinite(valor) || valor < 0 || valor > 100000000) {
+      return { error: 'Revise os valores das parcelas' };
+    }
+    cleanInstallments.push({
+      dias: cleanText(installment.dias, 20),
+      vencimento: cleanText(installment.vencimento, 20),
+      forma_pagamento: cleanText(installment.forma_pagamento, 60),
+      valor: Math.round(valor * 100) / 100,
+      observacao: cleanText(installment.observacao, 255),
+    });
+  }
+
+  const date = cleanText(body.data, 10);
+  const validity = cleanText(body.validade, 10);
+  const validIsoDate = (value) => {
+    if (!value) return true;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const parsedDate = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(parsedDate.getTime()) && parsedDate.toISOString().slice(0, 10) === value;
+  };
+  if (!validIsoDate(date) || !validIsoDate(validity)) {
+    return { error: 'Informe datas válidas para o orçamento' };
+  }
+
+  return {
+    data: {
+      empresa,
+      cliente,
+      cpf_cnpj: cleanText(body.cpf_cnpj, 30),
+      telefone: cleanText(body.telefone, 40),
+      email: cleanText(body.email, 255),
+      endereco: cleanText(body.endereco, 255),
+      cidade: cleanText(body.cidade, 100),
+      uf: cleanText(body.uf, 2).toUpperCase(),
+      cep: cleanText(body.cep, 15),
+      pedido_id: cleanText(body.pedido_id, 100),
+      data: date || new Date().toISOString().slice(0, 10),
+      validade: validity || null,
+      itens: cleanItems,
+      parcelas: cleanInstallments,
+      observacoes: cleanText(body.observacoes, 5000),
+      valor_total: valorTotalCentavos / 100,
+    },
+  };
+}
+
+app.get('/api/quotes', async (req, res) => {
+  try {
+    if (usePostgres) {
+      const result = await pool.query(`
+        SELECT id, empresa, cliente, cpf_cnpj, telefone, email, endereco, cidade, uf, cep,
+               pedido_id, TO_CHAR(data, 'YYYY-MM-DD') AS data,
+               TO_CHAR(validade, 'YYYY-MM-DD') AS validade,
+               itens, parcelas, observacoes, valor_total::float AS valor_total,
+               created_at, updated_at
+        FROM quotes
+        ORDER BY updated_at DESC, id DESC
+      `);
+      return res.json(result.rows);
+    }
+    const store = loadLocalStore();
+    return res.json([...store.quotes].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)));
+  } catch (error) {
+    console.error('Error fetching quotes:', error);
+    return res.status(500).json({ error: 'Falha ao buscar orçamentos' });
+  }
+});
+
+app.post('/api/quotes', async (req, res) => {
+  const normalized = normalizeQuote(req.body || {});
+  if (normalized.error) return res.status(400).json({ error: normalized.error });
+  const quote = normalized.data;
+  try {
+    if (usePostgres) {
+      const result = await pool.query(`
+        INSERT INTO quotes
+          (empresa, cliente, cpf_cnpj, telefone, email, endereco, cidade, uf, cep, pedido_id,
+           data, validade, itens, parcelas, observacoes, valor_total)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        RETURNING id, empresa, cliente, cpf_cnpj, telefone, email, endereco, cidade, uf, cep,
+                  pedido_id, TO_CHAR(data, 'YYYY-MM-DD') AS data,
+                  TO_CHAR(validade, 'YYYY-MM-DD') AS validade,
+                  itens, parcelas, observacoes, valor_total::float AS valor_total, created_at, updated_at
+      `, [
+        quote.empresa, quote.cliente, quote.cpf_cnpj, quote.telefone, quote.email, quote.endereco,
+        quote.cidade, quote.uf, quote.cep, quote.pedido_id, quote.data, quote.validade,
+        JSON.stringify(quote.itens), JSON.stringify(quote.parcelas), quote.observacoes, quote.valor_total,
+      ]);
+      return res.status(201).json(result.rows[0]);
+    }
+    const store = loadLocalStore();
+    const now = new Date().toISOString();
+    const created = { id: store.nextIds.quotes++, ...quote, created_at: now, updated_at: now };
+    store.quotes.push(created);
+    saveLocalStore(store);
+    return res.status(201).json(created);
+  } catch (error) {
+    console.error('Error creating quote:', error);
+    return res.status(500).json({ error: 'Falha ao salvar orçamento' });
+  }
+});
+
+app.put('/api/quotes/:id', async (req, res) => {
+  const normalized = normalizeQuote(req.body || {});
+  if (normalized.error) return res.status(400).json({ error: normalized.error });
+  const quote = normalized.data;
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'Identificador inválido' });
+  try {
+    if (usePostgres) {
+      const result = await pool.query(`
+        UPDATE quotes
+        SET empresa = $1, cliente = $2, cpf_cnpj = $3, telefone = $4, email = $5,
+            endereco = $6, cidade = $7, uf = $8, cep = $9, pedido_id = $10,
+            data = $11, validade = $12, itens = $13, parcelas = $14,
+            observacoes = $15, valor_total = $16, updated_at = NOW()
+        WHERE id = $17
+        RETURNING id, empresa, cliente, cpf_cnpj, telefone, email, endereco, cidade, uf, cep,
+                  pedido_id, TO_CHAR(data, 'YYYY-MM-DD') AS data,
+                  TO_CHAR(validade, 'YYYY-MM-DD') AS validade,
+                  itens, parcelas, observacoes, valor_total::float AS valor_total, created_at, updated_at
+      `, [
+        quote.empresa, quote.cliente, quote.cpf_cnpj, quote.telefone, quote.email, quote.endereco,
+        quote.cidade, quote.uf, quote.cep, quote.pedido_id, quote.data, quote.validade,
+        JSON.stringify(quote.itens), JSON.stringify(quote.parcelas), quote.observacoes,
+        quote.valor_total, id,
+      ]);
+      if (!result.rows.length) return res.status(404).json({ error: 'Orçamento não encontrado' });
+      return res.json(result.rows[0]);
+    }
+    const store = loadLocalStore();
+    const index = store.quotes.findIndex((item) => Number(item.id) === id);
+    if (index < 0) return res.status(404).json({ error: 'Orçamento não encontrado' });
+    store.quotes[index] = { ...store.quotes[index], ...quote, updated_at: new Date().toISOString() };
+    saveLocalStore(store);
+    return res.json(store.quotes[index]);
+  } catch (error) {
+    console.error('Error updating quote:', error);
+    return res.status(500).json({ error: 'Falha ao atualizar orçamento' });
+  }
+});
+
+app.delete('/api/quotes/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'Identificador inválido' });
+  try {
+    if (usePostgres) {
+      const result = await pool.query('DELETE FROM quotes WHERE id = $1 RETURNING id', [id]);
+      if (!result.rows.length) return res.status(404).json({ error: 'Orçamento não encontrado' });
+      return res.json({ message: 'Orçamento excluído com sucesso' });
+    }
+    const store = loadLocalStore();
+    const index = store.quotes.findIndex((item) => Number(item.id) === id);
+    if (index < 0) return res.status(404).json({ error: 'Orçamento não encontrado' });
+    store.quotes.splice(index, 1);
+    saveLocalStore(store);
+    return res.json({ message: 'Orçamento excluído com sucesso' });
+  } catch (error) {
+    console.error('Error deleting quote:', error);
+    return res.status(500).json({ error: 'Falha ao excluir orçamento' });
+  }
+});
+
 app.get('/api/orders', async (req, res) => {
   try {
     if (usePostgres) {

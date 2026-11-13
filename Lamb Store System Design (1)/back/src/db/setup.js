@@ -109,6 +109,30 @@ async function setup() {
   await pool.query('ALTER TABLE orders ADD COLUMN IF NOT EXISTS valor_total NUMERIC(12,2) NOT NULL DEFAULT 0');
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS quotes (
+      id SERIAL PRIMARY KEY,
+      empresa VARCHAR(20) NOT NULL CHECK (empresa IN ('peng', 'lamb')),
+      cliente VARCHAR(255) NOT NULL,
+      cpf_cnpj VARCHAR(30),
+      telefone VARCHAR(40),
+      email VARCHAR(255),
+      endereco VARCHAR(255),
+      cidade VARCHAR(100),
+      uf VARCHAR(2),
+      cep VARCHAR(15),
+      pedido_id VARCHAR(100),
+      data DATE NOT NULL DEFAULT CURRENT_DATE,
+      validade DATE,
+      itens JSONB NOT NULL DEFAULT '[]'::jsonb,
+      parcelas JSONB NOT NULL DEFAULT '[]'::jsonb,
+      observacoes TEXT NOT NULL DEFAULT '',
+      valor_total NUMERIC(12,2) NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS dashboard_entries (
       id SERIAL PRIMARY KEY,
       data DATE NOT NULL DEFAULT CURRENT_DATE,

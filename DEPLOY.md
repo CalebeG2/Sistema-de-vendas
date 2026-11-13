@@ -41,13 +41,21 @@ Importe o mesmo repositório na Vercel e defina como Root Directory
 
 O arquivo `vercel.json` já configura o fallback da aplicação.
 
+## 3. Orçamentos
+
+A aplicação inclui uma aba **Orçamentos** com os modelos de PENG CLOTHING e
+LAMB CLOTHING. A empresa selecionada define as cores e a marca do documento.
+Os dados e itens são salvos no PostgreSQL; o esquema da tabela é criado pelo
+backend ao iniciar. **Exportar PDF** abre a caixa de impressão do navegador
+(selecione “Salvar como PDF”) e **Exportar DOCX** baixa um documento editável.
+
 ## Alternativa: Netlify
 
 Crie um site a partir do mesmo repositório e configure Base directory como
 `Lamb Store System Design (1)/front`. O `netlify.toml` define o build e o
 fallback de rotas. Cadastre `VITE_API_URL` nas variáveis de ambiente do site.
 
-## 3. CORS e credenciais existentes
+## 4. CORS e credenciais existentes
 
 Depois de conhecer o domínio público do frontend, configure `CORS_ORIGINS` no
 Render com esse domínio; inclua também o domínio personalizado se houver. Cada

@@ -12,9 +12,11 @@ import {
   Check, RefreshCw, Download, Truck, Clock, CheckCircle,
   Layers, DollarSign, User, Lock, Mail, Box, FileText,
   CreditCard, Banknote, Zap, RotateCcw, AlertCircle, Calendar, Menu, X,
+  FilePlus2,
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { apiFetch as fetch, setApiToken } from "../lib/api";
+import QuotesScreen from "./QuotesScreen";
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
 const DISPLAY = { fontFamily: "'DM Serif Display', Georgia, serif" };
@@ -377,6 +379,7 @@ const NAV = [
   { id: "produtos", icon: Package, label: "Produtos" },
   { id: "dtf", icon: ImageIcon, label: "Banco DTF" },
   { id: "pedido", icon: ShoppingCart, label: "Criar Pedido" },
+  { id: "orcamentos", icon: FilePlus2, label: "Orçamentos" },
   { id: "kanban", icon: Layers, label: "Produção" },
   { id: "estoque", icon: Box, label: "Estoque" },
   { id: "relatorios", icon: BarChart2, label: "Relatórios" },
@@ -4520,6 +4523,7 @@ export default function App() {
         onNav={setScreen}
       />
     ),
+    orcamentos: <QuotesScreen />,
     kanban: (
       <ProducaoKanbanScreen
         kanban={kanban ?? EMPTY_KANBAN}
